@@ -13,10 +13,17 @@ model = joblib.load('model.pkl')
 features = joblib.load('features.pkl')
 
 def prepare_features(data):
-    data['RSI'] = RSIIndicator(data['Close']).rsi()
-    macd = MACD(data['Close'])
+    # Validasi data
+    if 'Close' not in data.columns or data['Close'].isnull().all():
+        raise ValueError("Data tidak memiliki harga penutupan ('Close') yang valid.")
+    if 'Volume' not in data.columns or data['Volume'].isnull().all():
+        raise ValueError("Data tidak memiliki volume yang valid.")
+
+    data = data.copy()
+    data['RSI'] = RSIIndicator(close=data['Close']).rsi()
+    macd = MACD(close=data['Close'])
     data['MACD'] = macd.macd_diff()
-    boll = BollingerBands(data['Close'])
+    boll = BollingerBands(close=data['Close'])
     data['BB_high'] = boll.bollinger_hband()
     data['BB_low'] = boll.bollinger_lband()
     data['SMA_20'] = data['Close'].rolling(window=20).mean()
@@ -60,11 +67,14 @@ ticker = st.text_input("Masukkan kode saham (misal: AAPL, MSFT, TSLA)", value="A
 if st.button("Prediksi dan Tampilkan Chart"):
     with st.spinner("Mengambil data dan memproses..."):
         data = yf.download(ticker, period='1d', interval='1m', progress=False)
-        if data.empty or len(data) < 30:
-            st.warning("⚠️ Data terlalu sedikit atau tidak tersedia.")
+        if data.empty or len(data) < 30 or data['Close'].isnull().all():
+            st.warning("⚠️ Data terlalu sedikit atau tidak memiliki harga penutupan yang valid.")
         else:
-            data = make_predictions(data)
-            last_pred = data['Prediction'].iloc[-1]
-            signal = "📈 BUY" if last_pred == 1 else "🔻 SELL" if last_pred == -1 else "⏸️ HOLD"
-            st.subheader(f"Prediksi Terbaru untuk {ticker.upper()}: {signal}")
-            st.plotly_chart(plot_chart(data, ticker), use_container_width=True)
+            try:
+                data = make_predictions(data)
+                last_pred = data['Prediction'].iloc[-1]
+                signal = "📈 BUY" if last_pred == 1 else "🔻 SELL" if last_pred == -1 else "⏸️ HOLD"
+                st.subheader(f"Prediksi Terbaru untuk {ticker.upper()}: {signal}")
+                st.plotly_chart(plot_chart(data, ticker), use_container_width=True)
+            except Exception as e:
+                st.error(f"Terjadi error saat memproses data: {e}")
